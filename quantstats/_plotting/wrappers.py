@@ -19,24 +19,18 @@
 # limitations under the License.
 
 import warnings
-import matplotlib.pyplot as _plt
-from matplotlib.ticker import (
-    StrMethodFormatter as _StrMethodFormatter,
-    FuncFormatter as _FuncFormatter,
-)
 
+import matplotlib.pyplot as _plt
 import numpy as _np
-from pandas import DataFrame as _df
 import pandas as _pd
 import seaborn as _sns
+from matplotlib.ticker import FuncFormatter as _FuncFormatter
+from matplotlib.ticker import StrMethodFormatter as _StrMethodFormatter
+from pandas import DataFrame as _df
 
-from .. import (
-    stats as _stats,
-    utils as _utils,
-)
-
+from .. import stats as _stats
+from .. import utils as _utils
 from . import core as _core
-
 
 _FLATUI_COLORS = ["#fedd78", "#348dc1", "#af4b64", "#4fa487", "#9b59b6", "#808080"]
 _GRAYSCALE_COLORS = (len(_FLATUI_COLORS) * ["black"]) + ["white"]
@@ -96,9 +90,7 @@ def snapshot(
         size = list(_plt.gcf().get_size_inches())
         figsize = (size[0], size[0] * 0.75)
 
-    fig, axes = _plt.subplots(
-        3, 1, sharex=True, figsize=figsize, gridspec_kw={"height_ratios": [3, 1, 1]}
-    )
+    fig, axes = _plt.subplots(3, 1, sharex=True, figsize=figsize, gridspec_kw={"height_ratios": [3, 1, 1]})
 
     if multi_column:
         _plt.figtext(
@@ -119,9 +111,7 @@ def snapshot(
         ax.spines["bottom"].set_visible(False)
         ax.spines["left"].set_visible(False)
 
-    fig.suptitle(
-        title, fontsize=14, y=0.97, fontname=fontname, fontweight="bold", color="black"
-    )
+    fig.suptitle(title, fontsize=14, y=0.97, fontname=fontname, fontweight="bold", color="black")
 
     fig.set_facecolor("white")
 
@@ -148,9 +138,7 @@ def snapshot(
                 color="gray",
             )
 
-    axes[0].set_ylabel(
-        "Cumulative Return", fontname=fontname, fontweight="bold", fontsize=12
-    )
+    axes[0].set_ylabel("Cumulative Return", fontname=fontname, fontweight="bold", fontsize=12)
     if isinstance(returns, _pd.Series):
         axes[0].plot(
             _stats.compsum(returns) * 100,
@@ -194,25 +182,17 @@ def snapshot(
             axes[1].fill_between(dd.index, 0, dd, color=colors[2], alpha=0.25)
         elif isinstance(dd, _pd.DataFrame):
             for i, col in enumerate(dd.columns):
-                axes[1].fill_between(
-                    dd[col].index, 0, dd[col], color=colors[i + 1], alpha=0.25
-                )
+                axes[1].fill_between(dd[col].index, 0, dd[col], color=colors[i + 1], alpha=0.25)
 
     axes[1].set_yscale("symlog" if log_scale else "linear")
     # axes[1].legend(fontsize=12)
 
-    axes[2].set_ylabel(
-        "Daily Return", fontname=fontname, fontweight="bold", fontsize=12
-    )
+    axes[2].set_ylabel("Daily Return", fontname=fontname, fontweight="bold", fontsize=12)
     if isinstance(returns, _pd.Series):
-        axes[2].plot(
-            returns * 100, color=colors[0], label=returns.name, lw=0.5, zorder=1
-        )
+        axes[2].plot(returns * 100, color=colors[0], label=returns.name, lw=0.5, zorder=1)
     elif isinstance(returns, _pd.DataFrame):
         for i, col in enumerate(returns.columns):
-            axes[2].plot(
-                returns[col] * 100, color=colors[i], label=col, lw=0.5, zorder=1
-            )
+            axes[2].plot(returns[col] * 100, color=colors[i], label=col, lw=0.5, zorder=1)
     axes[2].axhline(0, color="silver", lw=1, zorder=0)
     axes[2].axhline(0, color=colors[-1], linestyle="--", lw=1, zorder=2)
 
@@ -293,9 +273,7 @@ def earnings(
     ax.spines["bottom"].set_visible(False)
     ax.spines["left"].set_visible(False)
 
-    fig.suptitle(
-        f"    {title}", fontsize=12, y=0.95, fontname=fontname, fontweight="bold", color="black"
-    )
+    fig.suptitle(f"    {title}", fontsize=12, y=0.95, fontname=fontname, fontweight="bold", color="black")
 
     if subtitle:
         ax.set_title(
@@ -303,14 +281,8 @@ def earnings(
             % (
                 returns.index.date[1:2][0].strftime("%e %b '%y"),
                 returns.index.date[-1:][0].strftime("%e %b '%y"),
-                _utils._score_str(
-                    "${:,}".format(round(returns.values[-1] - returns.values[0], 2))
-                ),
-                _utils._score_str(
-                    "{:,}%".format(
-                        round((returns.values[-1] / returns.values[0] - 1) * 100, 2)
-                    )
-                ),
+                _utils._score_str("${:,}".format(round(returns.values[-1] - returns.values[0], 2))),
+                _utils._score_str("{:,}%".format(round((returns.values[-1] / returns.values[0] - 1) * 100, 2))),
             ),
             fontsize=10,
             color="gray",
@@ -488,6 +460,7 @@ def log_returns(
 def daily_returns(
     returns,
     benchmark,
+    resample="D",
     grayscale=False,
     figsize=(10, 4),
     fontname="Arial",
@@ -516,7 +489,7 @@ def daily_returns(
         ylabel=ylabel,
         match_volatility=False,
         log_scale=log_scale,
-        resample="D",
+        resample=resample,
         compound=False,
         lw=lw,
         figsize=figsize,
@@ -552,13 +525,7 @@ def yearly_returns(
     title = "EOY Returns"
     if benchmark is not None:
         title += "  vs Benchmark"
-        benchmark = (
-            _utils._prepare_benchmark(benchmark, returns.index)
-            .resample("YE")
-            .apply(_stats.comp)
-            .resample("YE")
-            .last()
-        )
+        benchmark = _utils._prepare_benchmark(benchmark, returns.index).resample("YE").apply(_stats.comp).resample("YE").last()
 
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
@@ -816,9 +783,7 @@ def rolling_volatility(
 
     if benchmark is not None:
         benchmark = _utils._prepare_benchmark(benchmark, returns.index)
-        benchmark = _stats.rolling_volatility(
-            benchmark, period, periods_per_year, prepare_returns=False
-        )
+        benchmark = _stats.rolling_volatility(benchmark, period, periods_per_year, prepare_returns=False)
 
     fig = _core.plot_rolling_stats(
         returns,
@@ -866,9 +831,7 @@ def rolling_sharpe(
 
     if benchmark is not None:
         benchmark = _utils._prepare_benchmark(benchmark, returns.index, rf)
-        benchmark = _stats.rolling_sharpe(
-            benchmark, rf, period, True, periods_per_year, prepare_returns=False
-        )
+        benchmark = _stats.rolling_sharpe(benchmark, rf, period, True, periods_per_year, prepare_returns=False)
 
     fig = _core.plot_rolling_stats(
         returns,
@@ -910,9 +873,7 @@ def rolling_sortino(
 
     if benchmark is not None:
         benchmark = _utils._prepare_benchmark(benchmark, returns.index, rf)
-        benchmark = _stats.rolling_sortino(
-            benchmark, rf, period, True, periods_per_year, prepare_returns=False
-        )
+        benchmark = _stats.rolling_sortino(benchmark, rf, period, True, periods_per_year, prepare_returns=False)
 
     fig = _core.plot_rolling_stats(
         returns,
@@ -985,9 +946,7 @@ def monthly_heatmap(
             fontweight="bold",
             color="black",
         )
-        benchmark = (
-            _stats.monthly_returns(benchmark, eoy=eoy, compounded=compounded) * 100
-        )
+        benchmark = _stats.monthly_returns(benchmark, eoy=eoy, compounded=compounded) * 100
         active_returns = returns - benchmark
 
         ax = _sns.heatmap(

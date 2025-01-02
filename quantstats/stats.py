@@ -18,16 +18,118 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from math import ceil as _ceil
+from math import sqrt as _sqrt
 from warnings import warn
-import pandas as _pd
+
 import numpy as _np
-from math import ceil as _ceil, sqrt as _sqrt
-from scipy.stats import norm as _norm, linregress as _linregress
+import pandas as _pd
+import scipy.stats as ss
+from scipy.stats import linregress as _linregress
+from scipy.stats import norm as _norm
 
 from . import utils as _utils
 
-
 # ======== STATS ========
+
+
+def compute_implied_precision(sl: float, tp: float, freq: int, sr: float = 2.0) -> float:
+    """
+    The function calculates the minimum required precision (or success/ win rate) for a trading rule to
+    achieve a specified Sharpe ratio specified by `sr`.
+
+    The success rate or precision is the likelihood that a given trade will achieve the take-profit target
+    rather than the stop-loss target.
+
+    Parameters
+    ----------
+    sl : float
+        Stop threshold (between 0 and 1).
+    tp : float
+        Take profit threshold (between 0 and 1).
+    freq : int
+        Annual number of trading.
+    sr : float, optional
+        Target sharpe ratio, by default 2.0
+
+    Returns
+    -------
+    float
+        Minimum required precision to achieve `sr`.
+
+    Reference
+    ---------
+    [Lopez De Prado, page 214](Advances in financial machine learning)
+    """
+    if sl > 0:
+        sl = -sl
+
+    delta = tp - sl
+    a = (freq + sr**2) * delta**2
+    b = (2 * freq * sl - sr**2 * delta) * delta
+    c = freq * sl**2
+    p = (-b + (b**2 - 4 * a * c) ** 0.5) / (2 * a)
+
+    return p
+
+
+def compute_implied_freq(sl: float, tp: float, p: float, sr: float = 2.0) -> float:
+    """
+    The function computes the required number of trades per year to achieve a target Sharpe Ratio `sr`.
+
+    Parameters
+    ----------
+    sl : float
+        Stop threshold (between 0 and 1).
+    tp : float
+        Take profit threshold (between 0 and 1).
+    p : float
+        The win rate.
+    sr : float, optional
+        Target sharpe ratio, by default 2.0
+
+    Returns
+    -------
+    float
+        Required trades per year.
+    """
+    delta = tp - sl
+    freq = (sr * (delta)) ** 2 * p * (1 - p) / (delta * p + sl) ** 2
+
+    return freq
+
+
+def compute_prob_failure(returns: _pd.Series, freq: int, sr: float = 2.0) -> float:
+    """
+    Derive the probability that a strategy will fail.
+
+    Parameters
+    ----------
+    returns : _pd.Series
+        Trade returns of the strategy.
+    freq : int
+        Annual number of trading.
+    sr : float, optional
+        Target sharpe ratio, by default 2.0
+
+    Returns
+    -------
+    float
+        A probability that a strategy will fail
+    """
+    if freq < 1:
+        return _np.nan
+
+    pos = returns[returns > 0].mean()
+    neg = returns[returns < 0].mean()
+
+    p = float(returns[returns > 0].shape[0] / returns.shape[0])
+
+    thres_p = compute_implied_precision(sl=neg, tp=pos, freq=freq, sr=sr)
+
+    risk = ss.norm.cdf(thres_p, p, p * (1 - p))
+
+    return risk
 
 
 def pct_rank(prices, window=60):
@@ -59,10 +161,7 @@ def distribution(returns, compounded=True, prepare_returns=True):
         }
 
     if isinstance(returns, _pd.DataFrame):
-        warn(
-            "Pandas DataFrame was passed (Series expected). "
-            "Only first column will be used."
-        )
+        warn("Pandas DataFrame was passed (Series expected). " "Only first column will be used.")
         returns = returns.copy()
         returns.columns = map(str.lower, returns.columns)
         if len(returns.columns) > 1 and "close" in returns.columns:
@@ -234,9 +333,7 @@ def volatility(returns, periods=252, annualize=True, prepare_returns=True):
     return std
 
 
-def rolling_volatility(
-    returns, rolling_period=126, periods_per_year=252, prepare_returns=True
-):
+def rolling_volatility(returns, rolling_period=126, periods_per_year=252, prepare_returns=True):
     if prepare_returns:
         returns = _utils._prepare_returns(returns, rolling_period)
 
@@ -358,21 +455,14 @@ def smart_sortino(returns, rf=0, periods=252, annualize=True):
     return sortino(returns, rf, periods, annualize, True)
 
 
-def rolling_sortino(
-    returns, rf=0, rolling_period=126, annualize=True, periods_per_year=252, **kwargs
-):
+def rolling_sortino(returns, rf=0, rolling_period=126, annualize=True, periods_per_year=252, **kwargs):
     if rf != 0 and rolling_period is None:
         raise Exception("Must provide periods if rf != 0")
 
     if kwargs.get("prepare_returns", True):
         returns = _utils._prepare_returns(returns, rf, rolling_period)
 
-    downside = (
-        returns.rolling(rolling_period).apply(
-            lambda x: (x.values[x.values < 0] ** 2).sum()
-        )
-        / rolling_period
-    )
+    downside = returns.rolling(rolling_period).apply(lambda x: (x.values[x.values < 0] ** 2).sum()) / rolling_period
 
     res = returns.rolling(rolling_period).mean() / _np.sqrt(downside)
     if annualize:
@@ -390,9 +480,7 @@ def adjusted_sortino(returns, rf=0, periods=252, annualize=True, smart=False):
     return data / _sqrt(2)
 
 
-def probabilistic_ratio(
-    series, rf=0.0, base="sharpe", periods=252, annualize=False, smart=False
-):
+def probabilistic_ratio(series, rf=0.0, base="sharpe", periods=252, annualize=False, smart=False):
 
     if base.lower() == "sharpe":
         base = sharpe(series, periods=periods, annualize=False, smart=smart)
@@ -401,18 +489,13 @@ def probabilistic_ratio(
     elif base.lower() == "adjusted_sortino":
         base = adjusted_sortino(series, periods=periods, annualize=False, smart=smart)
     else:
-        raise Exception(
-            "`metric` must be either `sharpe`, `sortino`, or `adjusted_sortino`"
-        )
+        raise Exception("`metric` must be either `sharpe`, `sortino`, or `adjusted_sortino`")
     skew_no = skew(series, prepare_returns=False)
     kurtosis_no = kurtosis(series, prepare_returns=False)
 
     n = len(series)
 
-    sigma_sr = _np.sqrt(
-        (1 + (0.5 * base**2) - (skew_no * base) + (((kurtosis_no - 3) / 4) * base**2))
-        / (n - 1)
-    )
+    sigma_sr = _np.sqrt((1 + (0.5 * base**2) - (skew_no * base) + (((kurtosis_no - 3) / 4) * base**2)) / (n - 1))
 
     ratio = (base - rf) / sigma_sr
     psr = _norm.cdf(ratio)
@@ -422,25 +505,15 @@ def probabilistic_ratio(
     return psr
 
 
-def probabilistic_sharpe_ratio(
-    series, rf=0.0, periods=252, annualize=False, smart=False
-):
-    return probabilistic_ratio(
-        series, rf, base="sharpe", periods=periods, annualize=annualize, smart=smart
-    )
+def probabilistic_sharpe_ratio(series, rf=0.0, periods=252, annualize=False, smart=False):
+    return probabilistic_ratio(series, rf, base="sharpe", periods=periods, annualize=annualize, smart=smart)
 
 
-def probabilistic_sortino_ratio(
-    series, rf=0.0, periods=252, annualize=False, smart=False
-):
-    return probabilistic_ratio(
-        series, rf, base="sortino", periods=periods, annualize=annualize, smart=smart
-    )
+def probabilistic_sortino_ratio(series, rf=0.0, periods=252, annualize=False, smart=False):
+    return probabilistic_ratio(series, rf, base="sortino", periods=periods, annualize=annualize, smart=smart)
 
 
-def probabilistic_adjusted_sortino_ratio(
-    series, rf=0.0, periods=252, annualize=False, smart=False
-):
+def probabilistic_adjusted_sortino_ratio(series, rf=0.0, periods=252, annualize=False, smart=False):
     return probabilistic_ratio(
         series,
         rf,
@@ -732,6 +805,28 @@ def outlier_win_ratio(returns, quantile=0.99, prepare_returns=True):
     return returns.quantile(quantile).mean() / returns[returns >= 0].mean()
 
 
+def win_ratio(returns, prepare_returns=True):
+    """
+    Calculates the win ratio
+    """
+    if prepare_returns:
+        returns = _utils._prepare_returns(returns)
+    return (returns > 0).sum() / len(returns)
+
+
+def tharp_expectancy(returns, prepare_returns=True):
+    if prepare_returns:
+        returns = _utils._prepare_returns(returns)
+
+    win_rate = (returns > 0).sum() / len(returns)
+    average_winner = returns[returns > 0].mean()
+    average_losers = returns[returns < 0].mean()
+    loose_rate = 1 - win_rate
+    te = (average_winner * win_rate + average_losers * loose_rate) / -average_losers
+
+    return te
+
+
 def outlier_loss_ratio(returns, quantile=0.01, prepare_returns=True):
     """
     Calculates the outlier losers ratio
@@ -885,9 +980,7 @@ def r_squared(returns, benchmark, prepare_returns=True):
     # slope, intercept, r_val, p_val, std_err = _linregress(
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
-    _, _, r_val, _, _ = _linregress(
-        returns, _utils._prepare_benchmark(benchmark, returns.index)
-    )
+    _, _, r_val, _, _ = _linregress(returns, _utils._prepare_benchmark(benchmark, returns.index))
     return r_val**2
 
 
@@ -977,26 +1070,16 @@ def compare(
     if isinstance(returns, _pd.Series):
         data = _pd.DataFrame(
             data={
-                "Benchmark": _utils.aggregate_returns(benchmark, aggregate, compounded)
-                * 100,
-                "Returns": _utils.aggregate_returns(returns, aggregate, compounded)
-                * 100,
+                "Benchmark": _utils.aggregate_returns(benchmark, aggregate, compounded) * 100,
+                "Returns": _utils.aggregate_returns(returns, aggregate, compounded) * 100,
             }
         )
 
         data["Multiplier"] = data["Returns"] / data["Benchmark"]
         data["Won"] = _np.where(data["Returns"] >= data["Benchmark"], "+", "-")
     elif isinstance(returns, _pd.DataFrame):
-        bench = {
-            "Benchmark": _utils.aggregate_returns(benchmark, aggregate, compounded)
-            * 100
-        }
-        strategy = {
-            "Returns_"
-            + str(i): _utils.aggregate_returns(returns[col], aggregate, compounded)
-            * 100
-            for i, col in enumerate(returns.columns)
-        }
+        bench = {"Benchmark": _utils.aggregate_returns(benchmark, aggregate, compounded) * 100}
+        strategy = {"Returns_" + str(i): _utils.aggregate_returns(returns[col], aggregate, compounded) * 100 for i, col in enumerate(returns.columns)}
         data = _pd.DataFrame(data={**bench, **strategy})
 
     if round_vals is not None:
@@ -1008,10 +1091,7 @@ def compare(
 def monthly_returns(returns, eoy=True, compounded=True, prepare_returns=True):
     """Calculates monthly returns"""
     if isinstance(returns, _pd.DataFrame):
-        warn(
-            "Pandas DataFrame was passed (Series expected). "
-            "Only first column will be used."
-        )
+        warn("Pandas DataFrame was passed (Series expected). " "Only first column will be used.")
         returns = returns.copy()
         returns.columns = map(str.lower, returns.columns)
         if len(returns.columns) > 1 and "close" in returns.columns:
@@ -1023,9 +1103,7 @@ def monthly_returns(returns, eoy=True, compounded=True, prepare_returns=True):
         returns = _utils._prepare_returns(returns)
     original_returns = returns.copy()
 
-    returns = _pd.DataFrame(
-        _utils.group_returns(returns, returns.index.strftime("%Y-%m-01"), compounded)
-    )
+    returns = _pd.DataFrame(_utils.group_returns(returns, returns.index.strftime("%Y-%m-01"), compounded))
 
     returns.columns = ["Returns"]
     returns.index = _pd.to_datetime(returns.index)
@@ -1074,9 +1152,7 @@ def monthly_returns(returns, eoy=True, compounded=True, prepare_returns=True):
     ]
 
     if eoy:
-        returns["eoy"] = _utils.group_returns(
-            original_returns, original_returns.index.year, compounded=compounded
-        ).values
+        returns["eoy"] = _utils.group_returns(original_returns, original_returns.index.year, compounded=compounded).values
 
     returns.columns = map(lambda x: str(x).upper(), returns.columns)
     returns.index.name = None
