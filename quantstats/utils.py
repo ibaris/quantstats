@@ -17,13 +17,67 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import io as _io
 import datetime as _dt
-import pandas as _pd
-import numpy as _np
-import yfinance as _yf
-from . import stats as _stats
 import inspect
+import io as _io
+
+import numpy as _np
+import pandas as _pd
+import yfinance as _yf
+
+from . import stats as _stats
+
+
+def time_frame_mapping(timeframe: str, daily_trading_hour: float = 6.5) -> float:
+    """
+    Maps a time frame to trading periods based on the unit:
+    - 's' (seconds): Returns trading seconds in an hour.
+    - 'm' (minutes): Returns trading minutes in a day.
+    - 'h' (hours): Maps to trading days in a year.
+    - 'd' (days): Maps to trading days in a year.
+
+    Parameters
+    ----------
+    timeframe : str
+        The time frame to map. It must end with 's', 'm', 'h', or 'd',
+        and the number prefix must be an integer.
+    daily_trading_hour : float, optional
+        Determine the typical trading hours a day. E.g. for stock exchanges is usually 6.5 hours
+        (9:30 AM - 4:00 PM) and for Crypto this would be 24 hours.
+
+    Returns
+    -------
+    float
+        The corresponding trading period.
+
+    Raises
+    ------
+    ValueError
+        If the time frame format is invalid or unsupported.
+    """
+    # Constants
+    TRADING_HOURS_PER_DAY = daily_trading_hour
+    TRADING_SECONDS_PER_HOUR = 3600  # Seconds in one hour
+    TRADING_MINUTES_PER_DAY = TRADING_HOURS_PER_DAY * 60
+    TRADING_DAYS_PER_YEAR = 252
+
+    # Parse the input
+    try:
+        value, unit = int(timeframe[:-1]), timeframe[-1].lower()
+    except (ValueError, IndexError):
+        raise ValueError(f"Invalid time frame format: {timeframe}")
+
+    if unit == "s":  # Secondly
+        return TRADING_SECONDS_PER_HOUR / value
+    elif unit == "m":  # Minutely
+        return TRADING_MINUTES_PER_DAY / value
+    elif unit == "h":  # Hourly
+        return TRADING_DAYS_PER_YEAR / value
+    elif unit == "d":  # Daily
+        return TRADING_DAYS_PER_YEAR / value
+    else:
+        raise ValueError(f"Unsupported time unit '{unit}' in time frame: {timeframe}")
+
 
 
 def _mtd(df):
@@ -95,9 +149,7 @@ def exponential_stdev(returns, window=30, is_halflife=False):
     """Returns series representing exponential volatility of returns"""
     returns = _prepare_returns(returns)
     halflife = window if is_halflife else None
-    return returns.ewm(
-        com=None, span=window, halflife=halflife, min_periods=window
-    ).std()
+    return returns.ewm(com=None, span=window, halflife=halflife, min_periods=window).std()
 
 
 def rebase(prices, base=100.0):
@@ -146,9 +198,7 @@ def aggregate_returns(returns, period=None, compounded=True):
         return group_returns(returns, [index.year, index.month], compounded=compounded)
 
     if "eoq" in period or period == "QE":
-        return group_returns(
-            returns, [index.year, index.quarter], compounded=compounded
-        )
+        return group_returns(returns, [index.year, index.quarter], compounded=compounded)
 
     if not isinstance(period, str):
         return group_returns(returns, period, compounded)
@@ -273,12 +323,7 @@ def _prepare_benchmark(benchmark=None, period="max", rf=0.0, prepare_returns=Tru
         # Adjust Benchmark to Strategy frequency
         benchmark_prices = to_prices(benchmark, base=1)
         new_index = _pd.date_range(start=period[0], end=period[-1], freq="D")
-        benchmark = (
-            benchmark_prices.reindex(new_index, method="bfill")
-            .reindex(period)
-            .pct_change()
-            .fillna(0)
-        )
+        benchmark = benchmark_prices.reindex(new_index, method="bfill").reindex(period).pct_change().fillna(0)
         benchmark = benchmark[benchmark.index.isin(period)]
 
     benchmark = benchmark.tz_localize(None)
@@ -337,9 +382,7 @@ def _score_str(val):
     return ("" if "-" in val else "+") + str(val)
 
 
-def make_index(
-    ticker_weights, rebalance="1M", period="max", returns=None, match_dates=False
-):
+def make_index(ticker_weights, rebalance="1M", period="max", returns=None, match_dates=False):
     """
     Makes an index out of the given tickers and weights.
     Optionally you can pass a dataframe with the returns.
@@ -398,9 +441,7 @@ def make_index(
 
     # multiply first day of each rebalance period by the weight
     for ticker, weight in ticker_weights.items():
-        index[ticker] = _np.where(
-            index["first_day"], weight * index[ticker], index[ticker]
-        )
+        index[ticker] = _np.where(index["first_day"], weight * index[ticker], index[ticker])
 
     # drop first marker
     index.drop(columns=["first_day"], inplace=True)
@@ -420,9 +461,7 @@ def make_portfolio(returns, start_balance=1e5, mode="comp", round_to=None):
         p1 = to_prices(returns, start_balance)
     else:
         # fixed amount every day
-        comp_rev = (start_balance + start_balance * returns.shift(1)).fillna(
-            start_balance
-        ) * returns
+        comp_rev = (start_balance + start_balance * returns.shift(1)).fillna(start_balance) * returns
         p1 = start_balance + comp_rev.cumsum()
 
     # add day before with starting balance

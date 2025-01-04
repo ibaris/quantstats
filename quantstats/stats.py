@@ -683,7 +683,7 @@ def risk_of_ruin(returns, prepare_returns=True):
     if prepare_returns:
         returns = _utils._prepare_returns(returns)
     wins = win_rate(returns)
-    return ((1 - wins) / (1 + wins)) ** len(returns)
+    return (1 - wins) / (1 + wins)
 
 
 def ror(returns):

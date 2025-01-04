@@ -25,7 +25,7 @@ from datetime import datetime as _dt
 from io import StringIO
 from math import ceil as _ceil
 from math import sqrt as _sqrt
-from typing import Optional
+from typing import Literal, Optional
 
 import numpy as _np
 import pandas as _pd
@@ -43,6 +43,30 @@ try:
 except ImportError:
     from IPython.core.display import HTML as iHTML
     from IPython.core.display import display as iDisplay
+
+
+def compound_delta_unit(
+    compound_value: int,
+    compound_unit: Literal["annual", "half-yearly", "daily", "hourly"],
+    today: _pd.Timestamp,
+):
+    if compound_unit == "annual":
+        d = today - relativedelta(months=compound_value * 12)
+        unit = f"{compound_value}Y"
+    elif compound_unit == "half-yearly":
+        months = compound_value * 6
+        d = today - relativedelta(months=months)
+        unit = f"{months / 12}Y"
+    elif compound_unit == "daily":
+        months = compound_value
+        d = today - relativedelta(months=months)
+        unit = f"{months}M"
+    elif compound_unit == "hourly":
+        days = compound_value
+        d = today - relativedelta(days=days)
+        unit = f"{months}D"
+
+    return d, unit
 
 
 def _get_trading_periods(periods_per_year=252):
@@ -75,6 +99,7 @@ def html(
     template_path=None,
     match_dates=True,
     symbols=None,
+    compound_unit: Literal["annual", "half-yearly", "daily", "hourly"] = "annual",
     **kwargs,
 ):
 
@@ -143,6 +168,7 @@ def html(
         prepare_returns=False,
         benchmark_title=benchmark_title,
         strategy_title=strategy_title,
+        compound_unit=compound_unit,
     )[2:]
 
     if symbols is not None and isinstance(symbols, list):
@@ -716,6 +742,7 @@ def metrics(
     prepare_returns=True,
     match_dates=True,
     amount_trades=None,
+    compound_unit: Literal["annual", "half-yearly", "daily", "hourly"] = "annual",
     **kwargs,
 ):
 
@@ -803,18 +830,19 @@ def metrics(
     days = (_pd.to_datetime(metrics["End Period"]["returns"]) - _pd.to_datetime(metrics["Start Period"]["returns"])).total_seconds() / 86400
 
     metrics["Days"] = days
+    metrics["Compund Unit"] = compound_unit
 
     yearly_trades = None
     if amount_trades is not None and amount_trades > 0:
         yearly_trades = amount_trades / days * periods_per_year
         metrics["Trades"] = amount_trades
-        metrics["Trades (ann.)"] = yearly_trades
+        metrics["Trades (comp.)"] = yearly_trades
 
         if benchmark is not None:
             yearly_trades_bm = 1 / days * periods_per_year
 
             metrics["Trades"]["benchmark"] = 1
-            metrics["Trades (ann.)"]["benchmark"] = yearly_trades_bm
+            metrics["Trades (comp.)"]["benchmark"] = yearly_trades_bm
 
     metrics["Risk-Free Rate %"] = _pd.Series(s_rf) * 100
     metrics["Time in Market %"] = _stats.exposure(df, prepare_returns=False) * pct
@@ -878,9 +906,9 @@ def metrics(
 
             vol_ = [ret_vol, bench_vol]
             if isinstance(ret_vol, list):
-                metrics["Volatility (ann.) %"] = list(_pd.core.common.flatten(vol_))
+                metrics["Volatility (comp.) %"] = list(_pd.core.common.flatten(vol_))
             else:
-                metrics["Volatility (ann.) %"] = vol_
+                metrics["Volatility (comp.) %"] = vol_
 
             if isinstance(returns, _pd.Series):
                 metrics["R2"] = _stats.r_squared(df["returns"], df["benchmark"], prepare_returns=False)
@@ -890,9 +918,9 @@ def metrics(
                 metrics["Information Ratio"] = ([_stats.information_ratio(df[strategy_col], df["benchmark"], prepare_returns=False).round(2) for strategy_col in df_strategy_columns]) + ["-"]
         else:
             if isinstance(returns, _pd.Series):
-                metrics["Volatility (ann.) %"] = [ret_vol]
+                metrics["Volatility (comp.) %"] = [ret_vol]
             elif isinstance(returns, _pd.DataFrame):
-                metrics["Volatility (ann.) %"] = ret_vol
+                metrics["Volatility (comp.) %"] = ret_vol
 
         metrics["Calmar"] = _stats.calmar(df, prepare_returns=False)
         metrics["Skew"] = _stats.skew(df, prepare_returns=False)
@@ -937,32 +965,33 @@ def metrics(
     metrics["~~"] = blank
 
     today = df.index[-1]  # _dt.today()
-    m3 = today - relativedelta(months=3)
-    m6 = today - relativedelta(months=6)
-    y1 = today - relativedelta(years=1)
-    if compounded:
-        metrics["MTD %"] = _stats.comp(df[df.index >= _dt(today.year, today.month, 1)]) * pct
-        metrics["3M %"] = _stats.comp(df[df.index >= m3]) * pct
-        metrics["6M %"] = _stats.comp(df[df.index >= m6]) * pct
-        metrics["YTD %"] = _stats.comp(df[df.index >= _dt(today.year, 1, 1)]) * pct
-        metrics["1Y %"] = _stats.comp(df[df.index >= y1]) * pct
-    else:
-        metrics["MTD %"] = _np.sum(df[df.index >= _dt(today.year, today.month, 1)], axis=0) * pct
-        metrics["3M %"] = _np.sum(df[df.index >= m3], axis=0) * pct
-        metrics["6M %"] = _np.sum(df[df.index >= m6], axis=0) * pct
-        metrics["YTD %"] = _np.sum(df[df.index >= _dt(today.year, 1, 1)], axis=0) * pct
-        metrics["1Y %"] = _np.sum(df[df.index >= y1], axis=0) * pct
+    # m3 = today - relativedelta(months=3)
+    # m6 = today - relativedelta(months=6)
+    # y1 = today - relativedelta(years=1)
+    # if compounded:
+    #     metrics["MTD %"] = _stats.comp(df[df.index >= _dt(today.year, today.month, 1)]) * pct
+    #     metrics["3M %"] = _stats.comp(df[df.index >= m3]) * pct
+    #     metrics["6M %"] = _stats.comp(df[df.index >= m6]) * pct
+    #     metrics["YTD %"] = _stats.comp(df[df.index >= _dt(today.year, 1, 1)]) * pct
+    #     metrics["1Y %"] = _stats.comp(df[df.index >= y1]) * pct
+    # else:
+    #     metrics["MTD %"] = _np.sum(df[df.index >= _dt(today.year, today.month, 1)], axis=0) * pct
+    #     metrics["3M %"] = _np.sum(df[df.index >= m3], axis=0) * pct
+    #     metrics["6M %"] = _np.sum(df[df.index >= m6], axis=0) * pct
+    #     metrics["YTD %"] = _np.sum(df[df.index >= _dt(today.year, 1, 1)], axis=0) * pct
+    #     metrics["1Y %"] = _np.sum(df[df.index >= y1], axis=0) * pct
 
-    d = today - relativedelta(months=35)
-    metrics["3Y (ann.) %"] = _stats.cagr(df[df.index >= d], 0.0, compounded) * pct
+    compound_values = [3, 5, 10]
 
-    d = today - relativedelta(months=59)
-    metrics["5Y (ann.) %"] = _stats.cagr(df[df.index >= d], 0.0, compounded) * pct
+    for compound_value in compound_values:
+        d, unit = compound_delta_unit(
+            compound_value=compound_value,
+            compound_unit=compound_unit,
+            today=today,
+        )
+        metrics[f"{unit} (comp.) %"] = _stats.cagr(df[df.index >= d], 0.0, compounded) * pct
 
-    d = today - relativedelta(years=10)
-    metrics["10Y (ann.) %"] = _stats.cagr(df[df.index >= d], 0.0, compounded) * pct
-
-    metrics["All-time (ann.) %"] = _stats.cagr(df, 0.0, compounded) * pct
+    metrics["All-time (comp.) %"] = _stats.cagr(df, 0.0, compounded) * pct
     metrics["All-time %"] = df.sum() * pct
 
     # best/worst
@@ -1111,6 +1140,176 @@ def metrics(
     if display:
         print(_tabulate(metrics, headers="keys", tablefmt="simple"))
         return None
+
+    if not sep:
+        metrics = metrics[metrics.index != ""]
+
+    # remove spaces from column names
+    metrics = metrics.T
+    metrics.columns = [c.replace(" %", "").replace(" *int", "").strip() for c in metrics.columns]
+    metrics = metrics.T
+
+    return metrics
+
+
+def basic_metrics(
+    returns,
+    rf=0.0,
+    display=True,
+    sep=False,
+    compounded=True,
+    periods_per_year=252,
+    prepare_returns=True,
+    match_dates=True,
+    amount_trades=None,
+    compound_unit: Literal["annual", "half-yearly", "daily", "hourly"] = "annual",
+    **kwargs,
+):
+
+    if match_dates:
+        returns = returns.dropna()
+    returns.index = returns.index.tz_localize(None)
+    win_year, _ = _get_trading_periods(periods_per_year)
+
+    strategy_colname = kwargs.get("strategy_title", "Strategy")
+
+    if isinstance(returns, _pd.DataFrame):
+        if len(returns.columns) > 1:
+            blank = [""] * len(returns.columns)
+            if isinstance(strategy_colname, str):
+                strategy_colname = list(returns.columns)
+    else:
+        blank = [""]
+
+    if prepare_returns:
+        df = _utils._prepare_returns(returns)
+
+    if isinstance(returns, _pd.Series):
+        df = _pd.DataFrame({"returns": returns})
+    elif isinstance(returns, _pd.DataFrame):
+        df = _pd.DataFrame({"returns_" + str(i + 1): returns[strategy_col] for i, strategy_col in enumerate(returns.columns)})
+
+    if isinstance(returns, _pd.Series):
+        s_start = {"returns": df["returns"].index.strftime("%Y-%m-%d")[0]}
+        s_end = {"returns": df["returns"].index.strftime("%Y-%m-%d")[-1]}
+        s_rf = {"returns": rf}
+
+    elif isinstance(returns, _pd.DataFrame):
+        df_strategy_columns = [col for col in df.columns if col != "benchmark"]
+        s_start = {strategy_col: df[strategy_col].dropna().index.strftime("%Y-%m-%d")[0] for strategy_col in df_strategy_columns}
+        s_end = {strategy_col: df[strategy_col].dropna().index.strftime("%Y-%m-%d")[-1] for strategy_col in df_strategy_columns}
+        s_rf = {strategy_col: rf for strategy_col in df_strategy_columns}
+
+    df = df.fillna(0)
+
+    # pct multiplier
+    pct = 100 if display or "internal" in kwargs else 1
+    if kwargs.get("as_pct", False):
+        pct = 100
+
+    # return df
+    dd = _calc_dd(
+        df,
+        display=(display or "internal" in kwargs),
+        as_pct=kwargs.get("as_pct", False),
+    )
+
+    metrics = _pd.DataFrame()
+
+    metrics["Start Period"] = _pd.Series(s_start)
+    metrics["End Period"] = _pd.Series(s_end)
+    days = (_pd.to_datetime(metrics["End Period"]["returns"]) - _pd.to_datetime(metrics["Start Period"]["returns"])).total_seconds() / 86400
+
+    metrics["Days"] = days
+    metrics["Compund Unit"] = compound_unit
+
+    metrics["Risk-Free Rate %"] = _pd.Series(s_rf) * 100
+
+    metrics["~"] = blank
+
+    if compounded:
+        metrics["Cumulative Return %"] = (_stats.comp(df) * pct).map("{:,.4f}".format)
+    else:
+        metrics["Total Return %"] = (df.sum() * pct).map("{:,.4f}".format)
+
+    metrics["CAGR %"] = _stats.cagr(df, rf, compounded) * pct
+
+    metrics["~~~~~~~~~~~~~~"] = blank
+
+    sharpe = _stats.sharpe(df, rf, win_year, True)
+    metrics["Sharpe"] = sharpe
+    metrics["Sortino"] = _stats.sortino(df, rf, win_year, True)
+    metrics["Adjusted Sortino"] = metrics["Sortino"] / _sqrt(2)
+    metrics["Omega"] = _stats.omega(df["returns"], rf, 0.0, win_year)
+
+    metrics["~~~~~~~~"] = blank
+    for ix, row in dd.iterrows():
+        metrics[ix] = row
+
+    metrics["~~~~~~~~~~"] = blank
+
+    metrics["Kelly Criterion %"] = _stats.kelly_criterion(df, prepare_returns=False) * pct
+    metrics["Tharp Expectancy %"] = _stats.tharp_expectancy(df, prepare_returns=False) * pct
+    metrics["Risk of Ruin %"] = _stats.risk_of_ruin(df, prepare_returns=False)
+
+    metrics["Value-at-Risk %"] = -abs(_stats.var(df, prepare_returns=False) * pct)
+    metrics["Expected Shortfall %"] = -abs(_stats.cvar(df, prepare_returns=False) * pct)
+
+    metrics["~~~~~~"] = blank
+
+    metrics["~~~~~~~"] = blank
+
+    metrics["Profit Factor"] = _stats.profit_factor(df, prepare_returns=False)
+    metrics["Win Ratio"] = _stats.win_ratio(df, prepare_returns=False)
+
+    # # returns
+    metrics["~~"] = blank
+
+    metrics["All-time %"] = df.sum() * pct
+
+    # prepare for display
+    for col in metrics.columns:
+        try:
+            metrics[col] = metrics[col].astype(float).round(2)
+            if display or "internal" in kwargs:
+                metrics[col] = metrics[col].astype(str)
+        except Exception:
+            pass
+        if (display or "internal" in kwargs) and "*int" in col:
+            metrics[col] = metrics[col].str.replace(".0", "", regex=False)
+            metrics.rename({col: col.replace("*int", "")}, axis=1, inplace=True)
+        if (display or "internal" in kwargs) and "%" in col:
+            metrics[col] = metrics[col] + "%"
+
+    metrics.columns = [col if "~" not in col else "" for col in metrics.columns]
+    metrics.columns = [col[:-1] if "%" in col else col for col in metrics.columns]
+    metrics = metrics.T
+
+    if isinstance(strategy_colname, list):
+        metrics.columns = strategy_colname
+    else:
+        metrics.columns = [strategy_colname]
+
+    # cleanups
+    metrics.replace([-0, "-0"], 0, inplace=True)
+    metrics.replace(
+        [
+            _np.nan,
+            -_np.nan,
+            _np.inf,
+            -_np.inf,
+            "-nan%",
+            "nan%",
+            "-nan",
+            "nan",
+            "-inf%",
+            "inf%",
+            "-inf",
+            "inf",
+        ],
+        "-",
+        inplace=True,
+    )
 
     if not sep:
         metrics = metrics[metrics.index != ""]
