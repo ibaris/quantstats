@@ -100,6 +100,7 @@ def html(
     match_dates=True,
     symbols=None,
     compound_unit: Literal["annual", "half-yearly", "daily", "hourly"] = "annual",
+    mtrx: Optional[_pd.DataFrame] = None,
     **kwargs,
 ):
 
@@ -155,21 +156,22 @@ def html(
     elif isinstance(returns, _pd.DataFrame):
         returns.columns = strategy_title
 
-    mtrx = metrics(
-        returns=returns,
-        benchmark=benchmark,
-        rf=rf,
-        display=False,
-        mode="full",
-        sep=True,
-        internal="True",
-        compounded=compounded,
-        periods_per_year=periods_per_year,
-        prepare_returns=False,
-        benchmark_title=benchmark_title,
-        strategy_title=strategy_title,
-        compound_unit=compound_unit,
-    )[2:]
+    if mtrx is None:
+        mtrx = metrics(
+            returns=returns,
+            benchmark=benchmark,
+            rf=rf,
+            display=False,
+            mode="full",
+            sep=True,
+            internal="True",
+            compounded=compounded,
+            periods_per_year=periods_per_year,
+            prepare_returns=False,
+            benchmark_title=benchmark_title,
+            strategy_title=strategy_title,
+            compound_unit=compound_unit,
+        )[2:]
 
     if symbols is not None and isinstance(symbols, list):
         symbols = _pd.DataFrame(symbols, columns=["Symbols"])
@@ -503,6 +505,329 @@ def html(
             )
             embed.append(figfile)
         tpl = tpl.replace("{{returns_dist}}", _embed_figure(embed, figfmt))
+
+    tpl = _regex.sub(r"\{\{(.*?)\}\}", "", tpl)
+    tpl = tpl.replace("white-space:pre;", "")
+
+    if output is None:
+        # _open_html(tpl)
+        _download_html(tpl, download_filename)
+        return
+
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(tpl)
+
+
+def simulation_html(
+    returns,
+    metrics,
+    grayscale=False,
+    title="Bootstrap Tearsheet",
+    output=None,
+    compounded=True,
+    download_filename="quantstats-tearsheet.html",
+    figfmt="svg",
+    template_path=None,
+    symbols=None,
+    **kwargs,
+):
+
+    if output is None and not _utils._in_notebook():
+        raise ValueError("`output` must be specified")
+
+    tpl = ""
+    with open(template_path or __file__[:-4] + "_sim.html") as f:
+        tpl = f.read()
+        f.close()
+
+    # date_range = returns.index.strftime("%e %b, %Y")
+    # tpl = tpl.replace("{{date_range}}", date_range[0] + " - " + date_range[-1])
+    tpl = tpl.replace("{{title}}", title)
+    tpl = tpl.replace("{{v}}", __version__)
+
+    if symbols is not None and isinstance(symbols, list):
+        symbols = _pd.DataFrame(symbols, columns=["Symbols"])
+
+    metrics.index.name = "Metric"
+    tpl = tpl.replace("{{metrics}}", _html_table(metrics))
+    if isinstance(returns, _pd.DataFrame):
+        num_cols = len(returns.columns)
+        for i in reversed(range(num_cols + 1, num_cols + 3)):
+            str_td = "<td></td>" * i
+            tpl = tpl.replace(f"<tr>{str_td}</tr>", '<tr><td colspan="{}"><hr></td></tr>'.format(i))
+
+    tpl = tpl.replace("<tr><td></td><td></td><td></td></tr>", '<tr><td colspan="3"><hr></td></tr>')
+    tpl = tpl.replace("<tr><td></td><td></td></tr>", '<tr><td colspan="2"><hr></td></tr>')
+
+    if symbols is not None:
+        tpl = tpl.replace("{{symbol_table}}", _html_table(symbols, True))
+
+    active = kwargs.get("active_returns", "False")
+
+    # plots
+    figfile = _utils._file_stream()
+
+    _plots.simulation_returns(
+        returns,
+        grayscale=grayscale,
+        figsize=(8, 5),
+        subtitle=False,
+        savefig={"fname": figfile, "format": figfmt},
+        show=False,
+        ylabel="",
+        cumulative=True,
+    )
+
+    tpl = tpl.replace("{{returns}}", _embed_figure(figfile, figfmt))
+
+    # figfile = _utils._file_stream()
+    # _plots.log_returns(
+    #     returns,
+    #     benchmark,
+    #     grayscale=grayscale,
+    #     figsize=(8, 4),
+    #     subtitle=False,
+    #     savefig={"fname": figfile, "format": figfmt},
+    #     show=False,
+    #     ylabel="",
+    #     cumulative=compounded,
+    #     prepare_returns=False,
+    # )
+    # tpl = tpl.replace("{{log_returns}}", _embed_figure(figfile, figfmt))
+
+    # if benchmark is not None:
+    #     figfile = _utils._file_stream()
+    #     _plots.returns(
+    #         returns,
+    #         benchmark,
+    #         match_volatility=True,
+    #         grayscale=grayscale,
+    #         figsize=(8, 4),
+    #         subtitle=False,
+    #         savefig={"fname": figfile, "format": figfmt},
+    #         show=False,
+    #         ylabel="",
+    #         cumulative=compounded,
+    #         prepare_returns=False,
+    #     )
+    #     tpl = tpl.replace("{{vol_returns}}", _embed_figure(figfile, figfmt))
+
+    # figfile = _utils._file_stream()
+    # _plots.yearly_returns(
+    #     returns,
+    #     benchmark,
+    #     grayscale=grayscale,
+    #     figsize=(8, 4),
+    #     subtitle=False,
+    #     savefig={"fname": figfile, "format": figfmt},
+    #     show=False,
+    #     ylabel="",
+    #     compounded=compounded,
+    #     prepare_returns=False,
+    # )
+    # tpl = tpl.replace("{{eoy_returns}}", _embed_figure(figfile, figfmt))
+
+    figfile = _utils._file_stream()
+    series_returns = _pd.Series(returns.flatten())
+
+    _plots.simulation_histogram(
+        series_returns,
+        grayscale=grayscale,
+        figsize=(7, 4),
+        savefig={"fname": figfile, "format": figfmt},
+        show=False,
+        ylabel="",
+    )
+    tpl = tpl.replace("{{monthly_dist}}", _embed_figure(figfile, figfmt))
+
+    # figfile = _utils._file_stream()
+    # _plots.daily_returns(
+    #     returns,
+    #     benchmark,
+    #     grayscale=grayscale,
+    #     figsize=(8, 3),
+    #     subtitle=False,
+    #     savefig={"fname": figfile, "format": figfmt},
+    #     show=False,
+    #     ylabel="",
+    #     prepare_returns=False,
+    #     active=active,
+    # )
+    # tpl = tpl.replace("{{daily_returns}}", _embed_figure(figfile, figfmt))
+
+    # if benchmark is not None:
+    #     figfile = _utils._file_stream()
+    #     _plots.rolling_beta(
+    #         returns,
+    #         benchmark,
+    #         grayscale=grayscale,
+    #         figsize=(8, 3),
+    #         subtitle=False,
+    #         window1=win_half_year,
+    #         window2=win_year,
+    #         savefig={"fname": figfile, "format": figfmt},
+    #         show=False,
+    #         ylabel="",
+    #         prepare_returns=False,
+    #     )
+    #     tpl = tpl.replace("{{rolling_beta}}", _embed_figure(figfile, figfmt))
+
+    # figfile = _utils._file_stream()
+    # _plots.rolling_volatility(
+    #     returns,
+    #     benchmark,
+    #     grayscale=grayscale,
+    #     figsize=(8, 3),
+    #     subtitle=False,
+    #     savefig={"fname": figfile, "format": figfmt},
+    #     show=False,
+    #     ylabel="",
+    #     period=win_half_year,
+    #     periods_per_year=win_year,
+    # )
+    # tpl = tpl.replace("{{rolling_vol}}", _embed_figure(figfile, figfmt))
+
+    # figfile = _utils._file_stream()
+    # _plots.rolling_sharpe(
+    #     returns,
+    #     grayscale=grayscale,
+    #     figsize=(8, 3),
+    #     subtitle=False,
+    #     savefig={"fname": figfile, "format": figfmt},
+    #     show=False,
+    #     ylabel="",
+    #     period=win_half_year,
+    #     periods_per_year=win_year,
+    # )
+    # tpl = tpl.replace("{{rolling_sharpe}}", _embed_figure(figfile, figfmt))
+
+    # figfile = _utils._file_stream()
+    # _plots.rolling_sortino(
+    #     returns,
+    #     grayscale=grayscale,
+    #     figsize=(8, 3),
+    #     subtitle=False,
+    #     savefig={"fname": figfile, "format": figfmt},
+    #     show=False,
+    #     ylabel="",
+    #     period=win_half_year,
+    #     periods_per_year=win_year,
+    # )
+    # tpl = tpl.replace("{{rolling_sortino}}", _embed_figure(figfile, figfmt))
+
+    # figfile = _utils._file_stream()
+    # if isinstance(returns, _pd.Series):
+    #     _plots.drawdowns_periods(
+    #         returns,
+    #         grayscale=grayscale,
+    #         figsize=(8, 4),
+    #         subtitle=False,
+    #         title=returns.name,
+    #         savefig={"fname": figfile, "format": figfmt},
+    #         show=False,
+    #         ylabel="",
+    #         compounded=compounded,
+    #         prepare_returns=False,
+    #     )
+    #     tpl = tpl.replace("{{dd_periods}}", _embed_figure(figfile, figfmt))
+    # elif isinstance(returns, _pd.DataFrame):
+    #     embed = []
+    #     for col in returns.columns:
+    #         _plots.drawdowns_periods(
+    #             returns[col],
+    #             grayscale=grayscale,
+    #             figsize=(8, 4),
+    #             subtitle=False,
+    #             title=col,
+    #             savefig={"fname": figfile, "format": figfmt},
+    #             show=False,
+    #             ylabel="",
+    #             compounded=compounded,
+    #             prepare_returns=False,
+    #         )
+    #         embed.append(figfile)
+    #     tpl = tpl.replace("{{dd_periods}}", _embed_figure(embed, figfmt))
+
+    # figfile = _utils._file_stream()
+    # _plots.drawdown(
+    #     returns,
+    #     grayscale=grayscale,
+    #     figsize=(8, 3),
+    #     subtitle=False,
+    #     savefig={"fname": figfile, "format": figfmt},
+    #     show=False,
+    #     ylabel="",
+    # )
+    # tpl = tpl.replace("{{dd_plot}}", _embed_figure(figfile, figfmt))
+
+    # figfile = _utils._file_stream()
+    # if isinstance(returns, _pd.Series):
+    #     _plots.monthly_heatmap(
+    #         returns,
+    #         benchmark,
+    #         grayscale=grayscale,
+    #         figsize=(8, 4),
+    #         cbar=False,
+    #         returns_label=returns.name,
+    #         savefig={"fname": figfile, "format": figfmt},
+    #         show=False,
+    #         ylabel="",
+    #         compounded=compounded,
+    #         active=active,
+    #     )
+    #     tpl = tpl.replace("{{monthly_heatmap}}", _embed_figure(figfile, figfmt))
+    # elif isinstance(returns, _pd.DataFrame):
+    #     embed = []
+    #     for col in returns.columns:
+    #         _plots.monthly_heatmap(
+    #             returns[col],
+    #             benchmark,
+    #             grayscale=grayscale,
+    #             figsize=(8, 4),
+    #             cbar=False,
+    #             returns_label=col,
+    #             savefig={"fname": figfile, "format": figfmt},
+    #             show=False,
+    #             ylabel="",
+    #             compounded=compounded,
+    #             active=active,
+    #         )
+    #         embed.append(figfile)
+    #     tpl = tpl.replace("{{monthly_heatmap}}", _embed_figure(embed, figfmt))
+
+    # figfile = _utils._file_stream()
+
+    # if isinstance(returns, _pd.Series):
+    #     _plots.distribution(
+    #         returns,
+    #         grayscale=grayscale,
+    #         figsize=(8, 4),
+    #         subtitle=False,
+    #         title=returns.name,
+    #         savefig={"fname": figfile, "format": figfmt},
+    #         show=False,
+    #         ylabel="",
+    #         compounded=compounded,
+    #         prepare_returns=False,
+    #     )
+    #     tpl = tpl.replace("{{returns_dist}}", _embed_figure(figfile, figfmt))
+    # elif isinstance(returns, _pd.DataFrame):
+    #     embed = []
+    #     for col in returns.columns:
+    #         _plots.distribution(
+    #             returns[col],
+    #             grayscale=grayscale,
+    #             figsize=(8, 4),
+    #             subtitle=False,
+    #             title=col,
+    #             savefig={"fname": figfile, "format": figfmt},
+    #             show=False,
+    #             ylabel="",
+    #             compounded=compounded,
+    #             prepare_returns=False,
+    #         )
+    #         embed.append(figfile)
+    #     tpl = tpl.replace("{{returns_dist}}", _embed_figure(embed, figfmt))
 
     tpl = _regex.sub(r"\{\{(.*?)\}\}", "", tpl)
     tpl = tpl.replace("white-space:pre;", "")
@@ -993,6 +1318,8 @@ def metrics(
 
     metrics["All-time (comp.) %"] = _stats.cagr(df, 0.0, compounded) * pct
     metrics["All-time %"] = df.sum() * pct
+    metrics["Average Winner"] = df[df > 0].mean()
+    metrics["Average Looser"] = df[df < 0].mean()
 
     # best/worst
     if mode.lower() == "full":

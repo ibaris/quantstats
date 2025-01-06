@@ -18,7 +18,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as _plt
+from matplotlib.ticker import PercentFormatter
 
 try:
     _plt.rcParams["font.family"] = "Arial"
@@ -31,9 +33,11 @@ import pandas as _pd
 import seaborn as _sns
 from matplotlib.ticker import FormatStrFormatter as _FormatStrFormatter
 from matplotlib.ticker import FuncFormatter as _FuncFormatter
+from quantstats import stats as _stats
+from quantstats import utils as _utils
 
-from .. import stats as _stats
-from .. import utils as _utils
+# from .. import stats as _stats
+# from .. import utils as _utils
 
 _sns.set(
     font_scale=1.1,
@@ -386,6 +390,126 @@ def plot_timeseries(
     return None
 
 
+def plot_simulation_returns(
+    returns,
+    title="Returns",
+    cumulative: bool = True,
+    hline=None,
+    hlw=None,
+    hlcolor="red",
+    hllabel="",
+    percent=True,
+    log_scale=False,
+    figsize=(10, 6),
+    ylabel="",
+    grayscale=False,
+    fontname="Arial",
+    subtitle=True,
+    savefig=None,
+    show=True,
+):
+
+    colors, ls, alpha = _get_colors(grayscale)
+
+    returns = _np.cumsum(returns, axis=1) if cumulative else returns
+
+    # ---------------
+
+    fig, ax = _plt.subplots(figsize=figsize)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+
+    fig.suptitle(title, y=0.94, fontweight="bold", fontname=fontname, fontsize=14, color="black")
+
+    if subtitle:
+        ax.set_title(
+            "%s - %s            \n"
+            % (
+                returns.index.date[:1][0].strftime("%e %b '%y"),
+                returns.index.date[-1:][0].strftime("%e %b '%y"),
+            ),
+            fontsize=12,
+            color="gray",
+        )
+
+    nsim = returns.shape[1]
+
+    fig.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    alpha = 0.25 if grayscale else 1
+    min_sim = _np.min(returns, axis=0).T
+    max_sim = _np.max(returns, axis=0).T
+
+    ax.plot(min_sim, lw=1, label="Min", color=colors[1], alpha=1)
+    ax.plot(max_sim, lw=1, label="Max", color=colors[1], alpha=1)
+    ax.plot(_np.median(returns, axis=0).T, lw=2, label="Median", color="black", alpha=1)
+    ax.plot(_np.quantile(returns, q=0.025, axis=0).T, lw=5, label="Q 2.5%", color=colors[7], alpha=0.5)
+    ax.plot(_np.quantile(returns, q=0.975, axis=0).T, lw=5, label="Q 97.5%", color=colors[7], alpha=0.5)
+    ax.fill_between(range(nsim), min_sim, max_sim, color=colors[1], alpha=0.25)
+
+    # rotate and align the tick labels so they look better
+    fig.autofmt_xdate()
+
+    # use a more precise date string for the x axis locations in the toolbar
+    # ax.fmt_xdata = _mdates.DateFormatter('%Y-%m-%d')
+
+    if hline is not None:
+        if not isinstance(hline, _pd.Series):
+            if grayscale:
+                hlcolor = "black"
+            ax.axhline(hline, ls="--", lw=hlw, color=hlcolor, label=hllabel, zorder=2)
+
+    ax.axhline(0, ls="-", lw=1, color="gray", zorder=1)
+    ax.axhline(0, ls="--", lw=1, color="white" if grayscale else "black", zorder=2)
+
+    # if isinstance(benchmark, _pd.Series) or hline is not None:
+    red_patch = mpatches.Patch(color=colors[7], label="Q 2.5% & 97.5%")
+    med_patch = mpatches.Patch(color=colors[2], label="Median")
+    sim_patch = mpatches.Patch(color=colors[1], label="Simulations")
+    ax.legend(handles=[red_patch, med_patch, sim_patch])
+
+    _plt.yscale("symlog" if log_scale else "linear")
+
+    if percent:
+        ax.yaxis.set_major_formatter(_FuncFormatter(format_pct_axis))
+        # ax.yaxis.set_major_formatter(_plt.FuncFormatter(
+        #     lambda x, loc: "{:,}%".format(int(x*100))))
+
+    ax.set_xlabel("")
+    if ylabel:
+        ax.set_ylabel(ylabel, fontname=fontname, fontweight="bold", fontsize=12, color="black")
+    ax.yaxis.set_label_coords(-0.1, 0.5)
+
+    try:
+        _plt.subplots_adjust(hspace=0, bottom=0, top=1)
+    except Exception:
+        pass
+
+    try:
+        fig.tight_layout()
+    except Exception:
+        pass
+
+    if savefig:
+        if isinstance(savefig, dict):
+            _plt.savefig(**savefig)
+        else:
+            _plt.savefig(savefig)
+
+    if show:
+        _plt.show(block=False)
+
+    _plt.close()
+
+    if not show:
+        return fig
+
+    return None
+
+
 def plot_histogram(
     returns,
     benchmark,
@@ -501,14 +625,133 @@ def plot_histogram(
         ax.axvline(
             combined_returns.mean(),
             ls="--",
-            lw=1.5,
+            lw=1,
             zorder=2,
             label="Average",
+            color="red",
+            linestyle="--",
+        )
+
+        ax.axvline(
+            combined_returns.median(),
+            ls="--",
+            lw=1.5,
+            zorder=2,
+            label="Median",
             color="red",
         )
 
     # _plt.setp(x.get_legend().get_texts(), fontsize=11)
-    ax.xaxis.set_major_formatter(_plt.FuncFormatter(lambda x, loc: "{:,}%".format(int(x * 100))))
+    ax.xaxis.set_major_formatter(PercentFormatter(1))
+
+    # Removed static lines for clarity
+    # ax.axhline(0.01, lw=1, color="#000000", zorder=2)
+    # ax.axvline(0, lw=1, color="#000000", zorder=2)
+
+    ax.set_xlabel("")
+    ax.set_ylabel("Occurrences", fontname=fontname, fontweight="bold", fontsize=12, color="black")
+    ax.yaxis.set_label_coords(-0.1, 0.5)
+
+    # fig.autofmt_xdate()
+
+    try:
+        _plt.subplots_adjust(hspace=0, bottom=0, top=1)
+    except Exception:
+        pass
+
+    try:
+        fig.tight_layout()
+    except Exception:
+        pass
+
+    if savefig:
+        if isinstance(savefig, dict):
+            _plt.savefig(**savefig)
+        else:
+            _plt.savefig(savefig)
+
+    if show:
+        _plt.show(block=False)
+
+    _plt.close()
+
+    if not show:
+        return fig
+
+    return None
+
+
+def plot_simulatoin_histogram(
+    returns,
+    benchmark,
+    bins=20,
+    fontname="Arial",
+    grayscale=False,
+    title="Returns",
+    kde=True,
+    figsize=(10, 6),
+    savefig=None,
+    show=True,
+):
+
+    # colors = ['#348dc1', '#003366', 'red']
+    # if grayscale:
+    #     colors = ['silver', 'gray', 'black']
+
+    colors, _, _ = _get_colors(grayscale)
+
+    figsize = (0.995 * figsize[0], figsize[1])
+    fig, ax = _plt.subplots(figsize=figsize)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+
+    fig.suptitle(title, y=0.94, fontweight="bold", fontname=fontname, fontsize=14, color="black")
+
+    fig.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    if isinstance(returns, _pd.DataFrame) and len(returns.columns) == 1:
+        returns = returns[returns.columns[0]]
+
+    alpha = 0.7
+
+    combined_returns = returns.copy() * 100
+
+    x = _sns.histplot(
+        data=combined_returns,
+        bins=bins,
+        alpha=alpha,
+        kde=False,
+        stat="density",
+        color=colors[1],
+        ax=ax,
+    )
+
+    # Why do we need average?
+    ax.axvline(
+        combined_returns.mean(),
+        ls="--",
+        lw=1,
+        zorder=2,
+        label="Average",
+        color="red",
+        linestyle="--",
+    )
+
+    ax.axvline(
+        combined_returns.median(),
+        ls="--",
+        lw=1.5,
+        zorder=2,
+        label="Median",
+        color="red",
+    )
+
+    # _plt.setp(x.get_legend().get_texts(), fontsize=11)
+    ax.xaxis.set_major_formatter(PercentFormatter(1))
 
     # Removed static lines for clarity
     # ax.axhline(0.01, lw=1, color="#000000", zorder=2)

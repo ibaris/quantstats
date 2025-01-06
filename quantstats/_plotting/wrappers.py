@@ -400,6 +400,39 @@ def returns(
         return fig
 
 
+def simulation_returns(
+    returns,
+    grayscale=False,
+    figsize=(10, 6),
+    fontname="Arial",
+    lw=1.5,
+    compound=True,
+    cumulative=True,
+    ylabel="Cumulative Returns",
+    subtitle=True,
+    savefig=None,
+    show=True,
+):
+
+    title = "Cumulative Returns" if compound else "Returns"
+
+    fig = _core.plot_simulation_returns(
+        returns,
+        title,
+        ylabel=ylabel,
+        log_scale=False,
+        cumulative=cumulative,
+        figsize=figsize,
+        fontname=fontname,
+        grayscale=grayscale,
+        subtitle=subtitle,
+        savefig=savefig,
+        show=show,
+    )
+    if not show:
+        return fig
+
+
 def log_returns(
     returns,
     benchmark=None,
@@ -633,6 +666,29 @@ def histogram(
         ylabel=ylabel,
         subtitle=subtitle,
         compounded=compounded,
+        savefig=savefig,
+        show=show,
+    )
+
+
+def simulation_histogram(
+    returns,
+    benchmark=None,
+    fontname="Arial",
+    grayscale=False,
+    figsize=(10, 5),
+    ylabel=True,
+    savefig=None,
+    show=True,
+):
+
+    return _core.plot_simulatoin_histogram(
+        returns,
+        benchmark,
+        grayscale=grayscale,
+        fontname=fontname,
+        title="Distribution of %sReturns",
+        figsize=figsize,
         savefig=savefig,
         show=show,
     )
