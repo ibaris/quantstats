@@ -173,6 +173,11 @@ def html(
             compound_unit=compound_unit,
         )[2:]
 
+    timeframe = mtrx.loc["Timeframe", "Strategy"]
+
+    if timeframe is not None:
+        tpl = tpl.replace("{{timeframe_title}}", f"Timeframe is {timeframe.upper()} | ")
+
     if symbols is not None and isinstance(symbols, list):
         symbols = _pd.DataFrame(symbols, columns=["Symbols"])
 
@@ -521,6 +526,7 @@ def html(
 def simulation_html(
     returns,
     metrics,
+    benchmark=None,
     grayscale=False,
     title="Bootstrap Tearsheet",
     output=None,
@@ -632,12 +638,14 @@ def simulation_html(
 
     _plots.simulation_histogram(
         series_returns,
+        benchmark=benchmark,
         grayscale=grayscale,
         figsize=(7, 4),
         savefig={"fname": figfile, "format": figfmt},
         show=False,
         ylabel="",
     )
+
     tpl = tpl.replace("{{monthly_dist}}", _embed_figure(figfile, figfmt))
 
     # figfile = _utils._file_stream()
@@ -1068,6 +1076,7 @@ def metrics(
     match_dates=True,
     amount_trades=None,
     compound_unit: Literal["annual", "half-yearly", "daily", "hourly"] = "annual",
+    timeframe: str = "1d",
     **kwargs,
 ):
 
@@ -1120,18 +1129,18 @@ def metrics(
                 df["returns_" + str(i + 1)] = returns[strategy_col]
 
     if isinstance(returns, _pd.Series):
-        s_start = {"returns": df["returns"].index.strftime("%Y-%m-%d")[0]}
-        s_end = {"returns": df["returns"].index.strftime("%Y-%m-%d")[-1]}
+        s_start = {"returns": df["returns"].index.strftime("%Y-%m-%d %H:%M:%S")[0]}
+        s_end = {"returns": df["returns"].index.strftime("%Y-%m-%d %H:%M:%S")[-1]}
         s_rf = {"returns": rf}
     elif isinstance(returns, _pd.DataFrame):
         df_strategy_columns = [col for col in df.columns if col != "benchmark"]
-        s_start = {strategy_col: df[strategy_col].dropna().index.strftime("%Y-%m-%d")[0] for strategy_col in df_strategy_columns}
-        s_end = {strategy_col: df[strategy_col].dropna().index.strftime("%Y-%m-%d")[-1] for strategy_col in df_strategy_columns}
+        s_start = {strategy_col: df[strategy_col].dropna().index.strftime("%Y-%m-%d %H:%M:%S")[0] for strategy_col in df_strategy_columns}
+        s_end = {strategy_col: df[strategy_col].dropna().index.strftime("%Y-%m-%d %H:%M:%S")[-1] for strategy_col in df_strategy_columns}
         s_rf = {strategy_col: rf for strategy_col in df_strategy_columns}
 
     if "benchmark" in df:
-        s_start["benchmark"] = df["benchmark"].index.strftime("%Y-%m-%d")[0]
-        s_end["benchmark"] = df["benchmark"].index.strftime("%Y-%m-%d")[-1]
+        s_start["benchmark"] = df["benchmark"].index.strftime("%Y-%m-%d %H:%M:%S")[0]
+        s_end["benchmark"] = df["benchmark"].index.strftime("%Y-%m-%d %H:%M:%S")[-1]
         s_rf["benchmark"] = rf
 
     df = df.fillna(0)
@@ -1155,6 +1164,7 @@ def metrics(
     days = (_pd.to_datetime(metrics["End Period"]["returns"]) - _pd.to_datetime(metrics["Start Period"]["returns"])).total_seconds() / 86400
 
     metrics["Days"] = days
+    metrics["Timeframe"] = timeframe
     metrics["Compund Unit"] = compound_unit
 
     yearly_trades = None
@@ -1175,9 +1185,9 @@ def metrics(
     metrics["~"] = blank
 
     if compounded:
-        metrics["Cumulative Return %"] = (_stats.comp(df) * pct).map("{:,.2f}".format)
+        metrics["Cumulative Return %"] = (_stats.comp(df) * pct).map("{:,.4f}".format)
     else:
-        metrics["Total Return %"] = (df.sum() * pct).map("{:,.2f}".format)
+        metrics["Total Return %"] = (df.sum() * pct).map("{:,.4f}".format)
 
     metrics["CAGR %"] = _stats.cagr(df, rf, compounded) * pct
 
@@ -1317,7 +1327,6 @@ def metrics(
         metrics[f"{unit} (comp.) %"] = _stats.cagr(df[df.index >= d], 0.0, compounded) * pct
 
     metrics["All-time (comp.) %"] = _stats.cagr(df, 0.0, compounded) * pct
-    metrics["All-time %"] = df.sum() * pct
     metrics["Average Winner"] = df[df > 0].mean()
     metrics["Average Looser"] = df[df < 0].mean()
 
@@ -1592,7 +1601,7 @@ def basic_metrics(
     # # returns
     metrics["~~"] = blank
 
-    metrics["All-time %"] = df.sum() * pct
+    metrics["Return %"] = df.sum() * pct
 
     # prepare for display
     for col in metrics.columns:

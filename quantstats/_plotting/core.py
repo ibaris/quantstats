@@ -392,6 +392,7 @@ def plot_timeseries(
 
 def plot_simulation_returns(
     returns,
+    benchmark=None,
     title="Returns",
     cumulative: bool = True,
     hline=None,
@@ -411,6 +412,7 @@ def plot_simulation_returns(
 
     colors, ls, alpha = _get_colors(grayscale)
 
+    returns = _np.nan_to_num(returns, 0)
     returns = _np.cumsum(returns, axis=1) if cumulative else returns
 
     # ---------------
@@ -441,11 +443,12 @@ def plot_simulation_returns(
 
     alpha = 0.25 if grayscale else 1
     min_sim = _np.min(returns, axis=0).T
+    min_sim[min_sim < -1] = -1
+
     max_sim = _np.max(returns, axis=0).T
 
     ax.plot(min_sim, lw=1, label="Min", color=colors[1], alpha=1)
     ax.plot(max_sim, lw=1, label="Max", color=colors[1], alpha=1)
-    ax.plot(_np.median(returns, axis=0).T, lw=2, label="Median", color="black", alpha=1)
     ax.plot(_np.quantile(returns, q=0.025, axis=0).T, lw=5, label="Q 2.5%", color=colors[7], alpha=0.5)
     ax.plot(_np.quantile(returns, q=0.975, axis=0).T, lw=5, label="Q 97.5%", color=colors[7], alpha=0.5)
     ax.fill_between(range(nsim), min_sim, max_sim, color=colors[1], alpha=0.25)
@@ -698,6 +701,9 @@ def plot_simulatoin_histogram(
     # if grayscale:
     #     colors = ['silver', 'gray', 'black']
 
+    if isinstance(returns, _pd.DataFrame) and len(returns.columns) == 1:
+        returns = returns[returns.columns[0]]
+
     colors, _, _ = _get_colors(grayscale)
 
     figsize = (0.995 * figsize[0], figsize[1])
@@ -713,12 +719,9 @@ def plot_simulatoin_histogram(
     fig.set_facecolor("white")
     ax.set_facecolor("white")
 
-    if isinstance(returns, _pd.DataFrame) and len(returns.columns) == 1:
-        returns = returns[returns.columns[0]]
-
     alpha = 0.7
 
-    combined_returns = returns.copy() * 100
+    combined_returns = returns.copy()
 
     x = _sns.histplot(
         data=combined_returns,
@@ -728,38 +731,45 @@ def plot_simulatoin_histogram(
         stat="density",
         color=colors[1],
         ax=ax,
+        label="Simulation",
     )
 
-    # Why do we need average?
     ax.axvline(
         combined_returns.mean(),
         ls="--",
-        lw=1,
-        zorder=2,
-        label="Average",
-        color="red",
-        linestyle="--",
-    )
-
-    ax.axvline(
-        combined_returns.median(),
-        ls="--",
         lw=1.5,
         zorder=2,
-        label="Median",
-        color="red",
+        color=colors[1],
     )
+
+    if benchmark is not None:
+        x = _sns.histplot(
+            data=benchmark,
+            bins=bins,
+            alpha=alpha,
+            kde=False,
+            stat="density",
+            label=benchmark.name,
+            color=colors[2],
+            ax=ax,
+        )
+
+        ax.axvline(
+            benchmark.mean(),
+            ls="--",
+            lw=1.5,
+            zorder=2,
+            color=colors[2],
+        )
 
     # _plt.setp(x.get_legend().get_texts(), fontsize=11)
     ax.xaxis.set_major_formatter(PercentFormatter(1))
 
-    # Removed static lines for clarity
-    # ax.axhline(0.01, lw=1, color="#000000", zorder=2)
-    # ax.axvline(0, lw=1, color="#000000", zorder=2)
-
-    ax.set_xlabel("")
+    ax.set_xlabel("Returns")
     ax.set_ylabel("Occurrences", fontname=fontname, fontweight="bold", fontsize=12, color="black")
     ax.yaxis.set_label_coords(-0.1, 0.5)
+
+    ax.legend(fontsize=11)
 
     # fig.autofmt_xdate()
 
@@ -1220,7 +1230,8 @@ def plot_distribution(
         },
     )
 
-    ax.yaxis.set_major_formatter(_plt.FuncFormatter(lambda x, loc: "{:,}%".format(int(x * 100))))
+    ax.yaxis.set_major_formatter(PercentFormatter(1))
+    # ax.yaxis.set_major_formatter(_plt.FuncFormatter(lambda x, loc: "{:,}%".format(int(x * 100))))
 
     if ylabel:
         ax.set_ylabel("Returns", fontname=fontname, fontweight="bold", fontsize=12, color="black")
